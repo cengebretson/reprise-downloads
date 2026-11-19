@@ -1,0 +1,96 @@
+name: Stage Music Sketch Tools release
+on:
+  workflow_dispatch:
+    inputs:
+      source_repository:
+        description: Source package-build repository (owner/repo)
+        required: true
+        type: string
+      source_commit:
+        description: Full source commit SHA used to build the packages
+        required: true
+        type: string
+      build_run:
+        description: Successful Optional Music Sketch Tools run ID
+        required: true
+        type: string
+      unsigned_preview:
+        description: Allow an unsigned developer preview (requires -preview.N tag)
+        type: boolean
+        default: false
+      tag:
+        description: Versioned tools release tag
+        required: true
+        default: music-sketch-tools-v0.1.0
+        type: string
+permissions:
+  contents: read
+jobs:
+  draft:
+    runs-on: ubuntu-22.04
+    environment: music-sketch-tools-release
+    permissions:
+      contents: write
+    env:
+      BUILD_RUN: ${{ inputs.build_run }}
+      SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      DOWNLOADS_REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      UNSIGNED_PREVIEW: ${{ inputs.unsigned_preview }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Test release gates
+        run: python -m unittest discover -s tests
+      - name: Verify the selected successful source build
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+        run: python tools/validate_build.py --out build/source-build.json
+      - uses: actions/download-artifact@v8
+        with:
+          repository: ${{ inputs.source_repository }}
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          path: build/release-input
+      - name: Verify signatures, checksums and lifecycle evidence; prepare catalog
+        run: |
+          preview=()
+          if [ "$UNSIGNED_PREVIEW" = true ]; then preview=(--unsigned-preview); fi
+          python tools/prepare_release.py --packages build/release-input --repository "$DOWNLOADS_REPOSITORY" --tag "$RELEASE_TAG" --out build/tools-release "${preview[@]}"
+          cp build/source-build.json build/tools-release/source-build.json
+      - name: Create a draft with assets (never publish or replace existing assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          preview=()
+          if [[ "$RELEASE_TAG" == *-preview.* ]]; then preview=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --repo "$DOWNLOADS_REPOSITORY" --draft --title "Music Sketch Tools $RELEASE_TAG" --notes-file build/tools-release/RELEASE.md "${preview[@]}"
+          assets=(build/tools-release/*.zip build/tools-release/catalog.json build/tools-release/verification.json build/tools-release/source-build.json)
+          for source in build/tools-release/*.tar.xz; do
+            if [ -f "$source" ]; then assets+=("$source"); fi
+          done
+          gh release upload "$RELEASE_TAG" --repo "$DOWNLOADS_REPOSITORY" "${assets[@]}"
+          gh release view "$RELEASE_TAG" --repo "$DOWNLOADS_REPOSITORY" --json isDraft,assets,url > build/tools-release/readback.json
+          python - <<'PY'
+          import json, pathlib
+          folder = pathlib.Path('build/tools-release')
+          release = json.loads((folder / 'readback.json').read_text())
+          assert release['isDraft'], 'Release must remain a draft'
+          assets = {a['name']: a['size'] for a in release['assets']}
+          expected = list(folder.glob('*.zip')) + list(folder.glob('*.tar.xz')) + [folder / name for name in ('catalog.json', 'verification.json', 'source-build.json')]
+          assert all(assets.get(p.name) == p.stat().st_size for p in expected), 'Uploaded assets do not match staged files'
+          print('Draft ready for review:', release['url'])
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tools-release-review
+          path: |
+            build/tools-release/catalog.json
+            build/tools-release/verification.json
+            build/tools-release/source-build.json
+            build/tools-release/RELEASE.md
+            build/tools-release/readback.json

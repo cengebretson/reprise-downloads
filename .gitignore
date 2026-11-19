@@ -1,0 +1,8 @@
+/build/
+__pycache__/
+*.py[cod]
+*.zip
+*.th
+*.p12
+*.pfx
+.DS_Store
