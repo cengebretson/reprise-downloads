@@ -9,8 +9,7 @@ Music Sketch Tools provides optional audio analysis for agent-assisted, editable
 song sketches. It installs separately and includes private Python, audio tools
 and native project helpers. Saved sketches play without the analysis tools installed.
 
-No tools release is available yet. Verified packages will appear under
-[Releases](https://github.com/cengebretson/reprise-downloads/releases).
+The [0.1.0-preview.1 unsigned Apple Silicon preview](https://github.com/cengebretson/reprise-downloads/releases/tag/music-sketch-tools-v0.1.0-preview.1) is available: **241 MB** for tools plus a separate **84 MB** separation-model download. macOS may show security warnings. Release notes include direct installation steps, checksums and corresponding sources. Intel Mac, Windows and Linux packages are not published yet.
 Unsigned developer previews are supported with an explicit preview tag and
 disclosure; stable releases retain publisher-signing requirements. Both paths
 require checksums and a passing install/sketch/remove test.
